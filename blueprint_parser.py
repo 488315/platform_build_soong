@@ -50,7 +50,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
         block_dict = {"type": block_type}
         
         # Extract key-value pairs and lists, allowing for spaces and newlines
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+|\w+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*([\[\{][^\[\}\]]*[\}\]]|\w+|"[^"]*"|true|false|\d+)', re.DOTALL)
         matches = key_value_pattern.findall(block_content)
         
         if not matches:
@@ -78,6 +78,9 @@ def parse_block(block_type, block_content, base_path, verbose=False):
                 elif value.isdigit():
                     # Handle numbers
                     value = int(value)
+                else:
+                    # Handle variables and concatenations
+                    value = evaluate_expression(value)
                 
                 block_dict[key] = value
                 if verbose:
@@ -103,6 +106,9 @@ def parse_list(value, verbose=False):
         value = re.sub(r'//.*$', '', value, flags=re.MULTILINE).strip()
         value = re.sub(r',\s*}', '}', value)  # Handle trailing commas
         value = re.sub(r',\s*\]', ']', value)  # Handle trailing commas
+
+        # Replace variables with dummy values for evaluation
+        value = re.sub(r'(\w+)', r'"\1"', value)
         
         # Handle variable concatenation
         if '+' in value:
@@ -129,13 +135,23 @@ def parse_list(value, verbose=False):
         pr_error(f"Error parsing list: {e}")
         raise BlueprintParseException(f"Invalid list format: {value}")
 
+def evaluate_expression(expression):
+    """Evaluates an expression that may include variable concatenation."""
+    try:
+        # Here we assume the environment has the variables initialized
+        # For simplicity, this example doesn't handle variable resolution
+        # You might want to add a function to resolve variables from the environment
+        return expression
+    except Exception as e:
+        raise BlueprintParseException(f"Invalid expression format: {expression}")
+
 def parse_nested_block(nested_block_content, verbose=False):
     """Parses a nested block."""
     nested_block_dict = {}
     try:
         if verbose:
             pr_info(f"Parsing nested block: {nested_block_content[:50]}...")
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+|\w+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*([\[\{][^\[\}\]]*[\}\]]|\w+|"[^"]*"|true|false|\d+)', re.DOTALL)
         matches = key_value_pattern.findall(nested_block_content)
         
         if not matches:
@@ -162,7 +178,7 @@ def parse_nested_block(nested_block_content, verbose=False):
                 value = int(value)
             else:
                 # Handle variables and single items
-                value = value
+                value = evaluate_expression(value)
             
             nested_block_dict[key] = value
             if verbose:
