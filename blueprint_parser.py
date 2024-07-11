@@ -6,7 +6,7 @@ def parse_blueprint_file(file_path, verbose=False):
     """Parses a single blueprint file for all module blocks."""
     try:
         if verbose:
-            print(f"\n---\nParsing file: {file_path}")
+            print(f"Parsing file: {file_path}")
         with open(file_path, 'r') as file:
             content = file.read()
         
@@ -14,21 +14,18 @@ def parse_blueprint_file(file_path, verbose=False):
         pattern = re.compile(r'(\w+)\s*\{([^{}]*?(?:\{[^{}]*\}[^{}]*)*?)\}', re.DOTALL)
         matches = pattern.findall(content)
         
-        if not matches:
-            if verbose:
-                print(f"No matches found in file: {file_path}")
+        if not matches and verbose:
+            print(f"No matches found in file: {file_path}")
         
         configs = []
-        for match in matches:
-            block_type, block_content = match
+        for block_type, block_content in matches:
             if verbose:
-                print(f"\nFound block type: {block_type}")
-                print(f"Block content:\n{block_content}\n")
+                print(f"Found block type: {block_type}, Content: {block_content[:50]}...")
             config = parse_block(block_type, block_content, os.path.dirname(file_path), verbose)
             if config:
                 configs.append(config)
                 if verbose:
-                    print(f"Processed block: {config.get('name', 'unknown')} -> {block_type}\nConfig: {config}\n")
+                    print(f"Processed block: {config.get('name', 'unknown')} -> {block_type}, Config: {json.dumps(config)}")
         
         return configs
     except Exception as e:
@@ -40,7 +37,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
     """Parses the content of a generic block."""
     try:
         if verbose:
-            print(f"Parsing block type: {block_type}\nContent: {block_content}")
+            print(f"Parsing block type: {block_type}")
         block_dict = {"type": block_type}
         
         # Extract key-value pairs and lists, allowing for spaces and newlines
@@ -53,7 +50,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
         for key, value in matches:
             try:
                 if verbose:
-                    print(f"\nProcessing key: {key}, value: {value}")
+                    print(f"Processing key: {key}, value: {value}")
                 if value.startswith('['):
                     # Handle lists
                     value = parse_list(value, verbose)
@@ -65,7 +62,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
                     value = value.strip('"')
                 elif value in ['true', 'false']:
                     # Handle booleans
-                    value = True if value == 'true' else False
+                    value = value == 'true'
                 else:
                     # Handle numbers
                     value = int(value)
@@ -109,7 +106,7 @@ def parse_nested_block(nested_block_content, verbose=False):
     nested_block_dict = {}
     try:
         if verbose:
-            print(f"Parsing nested block: {nested_block_content}")
+            print(f"Parsing nested block: {nested_block_content[:50]}...")
         key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+)', re.DOTALL)
         matches = key_value_pattern.findall(nested_block_content)
         
@@ -128,7 +125,7 @@ def parse_nested_block(nested_block_content, verbose=False):
                 value = value.strip('"')
             elif value in ['true', 'false']:
                 # Handle booleans
-                value = True if value == 'true' else False
+                value = value == 'true'
             else:
                 # Handle numbers
                 value = int(value)
@@ -167,19 +164,18 @@ def parse_module_info_file(module_info_path, verbose=False):
     
     try:
         if verbose:
-            print(f"\nReading MODULE_INFO file: {module_info_path}")
+            print(f"Reading MODULE_INFO file: {module_info_path}")
         with open(module_info_path, 'r') as file:
             bp_paths = file.read().splitlines()
         
-        if not bp_paths:
-            if verbose:
-                print(f"No paths found in MODULE_INFO file: {module_info_path}")
+        if not bp_paths and verbose:
+            print(f"No paths found in MODULE_INFO file: {module_info_path}")
         
         all_configs = []
         for bp_path in bp_paths:
             if os.path.exists(bp_path):
                 if verbose:
-                    print(f"\nParsing module file: {bp_path}")
+                    print(f"Parsing module file: {bp_path}")
                 configs = parse_blueprint_file(bp_path, verbose)
                 all_configs.extend(configs)
             else:
@@ -193,7 +189,7 @@ def parse_module_info_file(module_info_path, verbose=False):
         return []
 
 def main(verbose=False):
-    # Path to the MODULE_INFO file
+    """Main function to parse the MODULE_INFO file and print configurations."""
     module_info_path = "out/.module_paths/MODULE_INFO"
 
     # Parse the MODULE_INFO file
@@ -202,7 +198,7 @@ def main(verbose=False):
     # Print the configurations
     for config in all_configs:
         if verbose:
-            print(f"\nFinal configuration: {config}")
+            print(f"Final configuration: {json.dumps(config)}")
 
 if __name__ == "__main__":
     import argparse
