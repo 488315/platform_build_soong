@@ -6,6 +6,12 @@ from build_logger import pr_debug, pr_info, pr_warning, pr_error, pr_critical
 class BlueprintParseException(Exception):
     pass
 
+def get_error_context(content, pos, context_len=50):
+    """Returns a snippet of the context around the error position."""
+    start = max(pos - context_len // 2, 0)
+    end = min(pos + context_len // 2, len(content))
+    return content[start:end]
+
 def parse_blueprint_file(file_path, verbose=False):
     """Parses a single blueprint file for all module blocks."""
     try:
@@ -101,6 +107,11 @@ def parse_list(value, verbose=False):
         if verbose:
             pr_info(f"Parsed list: {parsed_list}")
         return parsed_list
+    except json.JSONDecodeError as e:
+        error_context = get_error_context(value, e.pos)
+        pr_error(f"Error parsing list at line {e.lineno}, column {e.colno}: {e.msg}")
+        pr_error(f"Context: {error_context}")
+        raise BlueprintParseException(f"Invalid list format: {value}")
     except Exception as e:
         pr_error(f"Error parsing list: {e}")
         raise BlueprintParseException(f"Invalid list format: {value}")
