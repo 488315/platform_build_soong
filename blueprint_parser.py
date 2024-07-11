@@ -50,7 +50,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
         block_dict = {"type": block_type}
         
         # Extract key-value pairs and lists, allowing for spaces and newlines
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+|\w+)', re.DOTALL)
         matches = key_value_pattern.findall(block_content)
         
         if not matches:
@@ -75,7 +75,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
                 elif value in ['true', 'false']:
                     # Handle booleans
                     value = value == 'true'
-                else:
+                elif value.isdigit():
                     # Handle numbers
                     value = int(value)
                 
@@ -99,11 +99,24 @@ def parse_list(value, verbose=False):
     try:
         if verbose:
             pr_info(f"Parsing list: {value}")
-        # Remove comments and extra spaces, then load as JSON
+        # Remove comments and extra spaces
         value = re.sub(r'//.*$', '', value, flags=re.MULTILINE).strip()
         value = re.sub(r',\s*}', '}', value)  # Handle trailing commas
         value = re.sub(r',\s*\]', ']', value)  # Handle trailing commas
-        parsed_list = json.loads(value)
+        
+        # Handle variable concatenation
+        if '+' in value:
+            parts = value.split('+')
+            parsed_list = []
+            for part in parts:
+                part = part.strip()
+                if part.startswith('[') and part.endswith(']'):
+                    parsed_list.extend(json.loads(part))
+                else:
+                    parsed_list.append(part)
+        else:
+            parsed_list = json.loads(value)
+        
         if verbose:
             pr_info(f"Parsed list: {parsed_list}")
         return parsed_list
@@ -122,7 +135,7 @@ def parse_nested_block(nested_block_content, verbose=False):
     try:
         if verbose:
             pr_info(f"Parsing nested block: {nested_block_content[:50]}...")
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+|\w+)', re.DOTALL)
         matches = key_value_pattern.findall(nested_block_content)
         
         if not matches:
@@ -144,9 +157,12 @@ def parse_nested_block(nested_block_content, verbose=False):
             elif value in ['true', 'false']:
                 # Handle booleans
                 value = value == 'true'
-            else:
+            elif value.isdigit():
                 # Handle numbers
                 value = int(value)
+            else:
+                # Handle variables and single items
+                value = value
             
             nested_block_dict[key] = value
             if verbose:
@@ -164,14 +180,13 @@ def check_src_files(block_dict, base_path, verbose=False):
         src_files = block_dict['srcs']
         if isinstance(src_files, str):
             src_files = [src_files]
+        missing_files = set()
         for src in src_files:
             src_path = os.path.join(base_path, src)
-            if os.path.exists(src_path):
-                if verbose:
-                    pr_debug(f"File exists for {block_dict['type']} '{block_dict['name']}': {src_path}")
-            else:
-                if verbose:
-                    pr_warning(f"File does NOT exist for {block_dict['type']} '{block_dict['name']}': {src_path}")
+            if not os.path.exists(src_path):
+                missing_files.add(src_path)
+        for src in missing_files:
+            pr_error(f"Source file does not exist: {src}")
 
 def parse_module_info_file(module_info_path, verbose=False):
     """Reads the MODULE_INFO file and parses each listed blueprint file."""
