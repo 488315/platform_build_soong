@@ -186,7 +186,7 @@ def check_src_files(block_dict, base_path, verbose=False):
             if not os.path.exists(src_path):
                 missing_files.add(src_path)
         for src in missing_files:
-            pr_error(f"Source file does not exist: {src}")
+            pr_warning(f"Source file does not exist: {src}")
 
 def parse_module_info_file(module_info_path, verbose=False):
     """Reads the MODULE_INFO file and parses each listed blueprint file."""
