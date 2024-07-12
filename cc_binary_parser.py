@@ -6,21 +6,7 @@ from termcolor import colored
 from blueprint_parser import parse_module_info_file
 from cc_library import compile_cc_binary, compile_library
 from defaults_parser import apply_defaults
-
-def generate_meta_lic(config, intermediates_dir, verbose=True):
-    """Generates meta_lic file in the specified intermediates directory."""
-    try:
-        meta_lic_file = os.path.join(intermediates_dir, "meta_lic")
-        if not os.path.exists(intermediates_dir):
-            os.makedirs(intermediates_dir)
-        with open(meta_lic_file, 'w') as f:
-            licenses = config.get('license_kinds', [])
-            for license in licenses:
-                f.write(f"{license}\n")
-            if verbose:
-                print(colored(f"Generated meta_lic file at {meta_lic_file}", 'green'))
-    except Exception as e:
-        print(colored(f"\nError generating meta_lic for {config['name']}: {e}", 'red'))
+from meta_lic_gen import generate_meta_lic
 
 def main(verbose=True):
     # Path to the MODULE_INFO file
