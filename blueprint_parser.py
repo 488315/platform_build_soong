@@ -6,17 +6,12 @@ from build_logger import pr_debug, pr_info, pr_warning, pr_error, pr_critical
 class BlueprintParseException(Exception):
     pass
 
-def get_error_context(content, pos, context_len=50):
-    """Returns a snippet of the context around the error position."""
-    start = max(pos - context_len // 2, 0)
-    end = min(pos + context_len // 2, len(content))
-    return content[start:end]
-
 def parse_blueprint_file(file_path, verbose=False):
     """Parses a single blueprint file for all module blocks."""
     try:
         if verbose:
             pr_info(f"Parsing file: {file_path}")
+        
         with open(file_path, 'r') as file:
             content = file.read()
         
@@ -50,7 +45,7 @@ def parse_block(block_type, block_content, base_path, verbose=False):
         block_dict = {"type": block_type}
         
         # Extract key-value pairs and lists, allowing for spaces and newlines
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*([\[\{][^\[\}\]]*[\}\]]|\w+|"[^"]*"|true|false|\d+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+)', re.DOTALL)
         matches = key_value_pattern.findall(block_content)
         
         if not matches:
@@ -75,12 +70,9 @@ def parse_block(block_type, block_content, base_path, verbose=False):
                 elif value in ['true', 'false']:
                     # Handle booleans
                     value = value == 'true'
-                elif value.isdigit():
+                else:
                     # Handle numbers
                     value = int(value)
-                else:
-                    # Handle variables and concatenations
-                    value = evaluate_expression(value)
                 
                 block_dict[key] = value
                 if verbose:
@@ -102,48 +94,17 @@ def parse_list(value, verbose=False):
     try:
         if verbose:
             pr_info(f"Parsing list: {value}")
-        # Remove comments and extra spaces
+        # Remove comments and extra spaces, then load as JSON
         value = re.sub(r'//.*$', '', value, flags=re.MULTILINE).strip()
         value = re.sub(r',\s*}', '}', value)  # Handle trailing commas
         value = re.sub(r',\s*\]', ']', value)  # Handle trailing commas
-
-        # Replace variables with dummy values for evaluation
-        value = re.sub(r'(\w+)', r'"\1"', value)
-        
-        # Handle variable concatenation
-        if '+' in value:
-            parts = value.split('+')
-            parsed_list = []
-            for part in parts:
-                part = part.strip()
-                if part.startswith('[') and part.endswith(']'):
-                    parsed_list.extend(json.loads(part))
-                else:
-                    parsed_list.append(part)
-        else:
-            parsed_list = json.loads(value)
-        
+        parsed_list = json.loads(value)
         if verbose:
             pr_info(f"Parsed list: {parsed_list}")
         return parsed_list
-    except json.JSONDecodeError as e:
-        error_context = get_error_context(value, e.pos)
-        pr_error(f"Error parsing list at line {e.lineno}, column {e.colno}: {e.msg}")
-        pr_error(f"Context: {error_context}")
-        raise BlueprintParseException(f"Invalid list format: {value}")
     except Exception as e:
         pr_error(f"Error parsing list: {e}")
         raise BlueprintParseException(f"Invalid list format: {value}")
-
-def evaluate_expression(expression):
-    """Evaluates an expression that may include variable concatenation."""
-    try:
-        # Here we assume the environment has the variables initialized
-        # For simplicity, this example doesn't handle variable resolution
-        # You might want to add a function to resolve variables from the environment
-        return expression
-    except Exception as e:
-        raise BlueprintParseException(f"Invalid expression format: {expression}")
 
 def parse_nested_block(nested_block_content, verbose=False):
     """Parses a nested block."""
@@ -151,7 +112,7 @@ def parse_nested_block(nested_block_content, verbose=False):
     try:
         if verbose:
             pr_info(f"Parsing nested block: {nested_block_content[:50]}...")
-        key_value_pattern = re.compile(r'(\w+)\s*:\s*([\[\{][^\[\}\]]*[\}\]]|\w+|"[^"]*"|true|false|\d+)', re.DOTALL)
+        key_value_pattern = re.compile(r'(\w+)\s*:\s*(\[[^\]]*\]|\{[^\}]*\}|"[^"]*"|true|false|\d+)', re.DOTALL)
         matches = key_value_pattern.findall(nested_block_content)
         
         if not matches:
@@ -173,12 +134,9 @@ def parse_nested_block(nested_block_content, verbose=False):
             elif value in ['true', 'false']:
                 # Handle booleans
                 value = value == 'true'
-            elif value.isdigit():
+            else:
                 # Handle numbers
                 value = int(value)
-            else:
-                # Handle variables and single items
-                value = evaluate_expression(value)
             
             nested_block_dict[key] = value
             if verbose:
@@ -196,13 +154,14 @@ def check_src_files(block_dict, base_path, verbose=False):
         src_files = block_dict['srcs']
         if isinstance(src_files, str):
             src_files = [src_files]
-        missing_files = set()
         for src in src_files:
             src_path = os.path.join(base_path, src)
-            if not os.path.exists(src_path):
-                missing_files.add(src_path)
-        for src in missing_files:
-            pr_warning(f"Source file does not exist: {src}")
+            if os.path.exists(src_path):
+                if verbose:
+                    pr_debug(f"File exists for {block_dict['type']} '{block_dict['name']}': {src_path}")
+            else:
+                if verbose:
+                    pr_warning(f"File does NOT exist for {block_dict['type']} '{block_dict['name']}': {src_path}")
 
 def parse_module_info_file(module_info_path, verbose=False):
     """Reads the MODULE_INFO file and parses each listed blueprint file."""
