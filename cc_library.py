@@ -5,7 +5,7 @@ from termcolor import colored
 from defaults_parser import apply_defaults
 from envsetup import target_obj, clang, clangxx, target_vendor_out_bin, target_system_out_bin, target_recovery_out_usr_bin, target_product_out, build_top
 
-def compile_source_file(src, base_path, intermediates_dir, recovery_available, index, total, cflags, include_dirs, library_type=None, verbose=True):
+def compile_source_file(src, base_path, intermediates_dir, recovery_available, index, total, cflags, include_dirs, library_type=None, rtti=False, verbose=True):
     """Compiles a single source file into an object file using Clang or Clang++."""
     src_path = os.path.join(base_path, src)
     obj_file = os.path.join(intermediates_dir, f"{os.path.splitext(src)[0]}.o")
@@ -36,6 +36,10 @@ def compile_source_file(src, base_path, intermediates_dir, recovery_available, i
     # Add -fPIC for shared libraries
     if library_type == 'shared':
         compile_cmd.append("-fPIC")
+
+    # Add RTTI support if required
+    if rtti:
+        compile_cmd.append("-frtti")
 
     # Display the compilation message in the desired format
     clear_line = '\033[K'
@@ -80,6 +84,7 @@ def link_executable(name, obj_files, shared_libs, static_libs, output_file, verb
 
     # Add flag to treat missing symbols as errors
     link_cmd.append("-Wl,--no-undefined")
+    link_cmd.append("-Wl,--as-needed")
 
     if verbose:
         print(colored(f"Linking executable {output_file}", 'yellow'))
@@ -87,12 +92,6 @@ def link_executable(name, obj_files, shared_libs, static_libs, output_file, verb
     if result.returncode != 0:
         print(colored(f"Error linking executable {name}: {result.stderr.decode()}", 'red'))
         return False
-
-    # After linking, add the shared libraries from /lib64
-    for lib in shared_libs:
-        lib_path = f"/lib64/{lib}.so"
-        if os.path.exists(lib_path):
-            link_cmd.append(lib_path)
 
     return True
 
@@ -111,6 +110,7 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, verbose=True,
         recovery_available = config.get('recovery_available', False)
         is_vendor = config.get('vendor', False)
         include_dirs = config.get('export_include_dirs', []) if include_dirs is None else include_dirs
+        rtti = config.get('rtti', False)
 
         # Define the intermediate and output directories
         intermediates_dir = os.path.join(target_obj, "EXECUTABLES", f"{name}_intermediates")
@@ -129,7 +129,7 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, verbose=True,
         # Compile each source file using multithreading
         with ThreadPoolExecutor() as executor:
             futures = [
-                executor.submit(compile_source_file, src, base_path, intermediates_dir, recovery_available, index + 1, total_files, cflags, include_dirs, verbose)
+                executor.submit(compile_source_file, src, base_path, intermediates_dir, recovery_available, index + 1, total_files, cflags, include_dirs, verbose, rtti)
                 for index, src in enumerate(srcs)
             ]
             results = [future.result() for future in as_completed(futures)]
@@ -166,6 +166,8 @@ def compile_library(config, base_path, library_type, verbose=True):
         cflags = config.get('cflags', [])
         include_dirs = config.get('export_include_dirs', [])
         shared_libs = config.get('shared_libs', [])
+        static_libs = config.get('static_libs', [])
+        rtti = config.get('rtti', False)
         intermediates_dir = os.path.join(target_obj, f"{library_type.upper()}_LIBRARIES", f"{name}_intermediates")
 
         os.makedirs(intermediates_dir, exist_ok=True)
@@ -174,7 +176,7 @@ def compile_library(config, base_path, library_type, verbose=True):
         # Compile each source file using multithreading
         with ThreadPoolExecutor() as executor:
             futures = [
-                executor.submit(compile_source_file, src, base_path, intermediates_dir, False, index + 1, total_files, cflags, include_dirs, library_type, verbose)
+                executor.submit(compile_source_file, src, base_path, intermediates_dir, False, index + 1, total_files, cflags, include_dirs, library_type, rtti, verbose)
                 for index, src in enumerate(srcs)
             ]
             results = [future.result() for future in as_completed(futures)]
@@ -204,6 +206,14 @@ def compile_library(config, base_path, library_type, verbose=True):
                 else:
                     print(colored(f"Shared library {lib_path} does not exist", 'red'))
 
+            # Add static libraries specified in the config
+            for lib in static_libs:
+                lib_path = get_library_path(lib, 'static')
+                if os.path.exists(lib_path):
+                    link_cmd.append(lib_path)
+                else:
+                    print(colored(f"Static library {lib_path} does not exist", 'red'))
+
             if verbose:
                 print(colored(f"\nCreating shared library {name}", 'yellow'))
             result = subprocess.run(link_cmd, capture_output=True)
@@ -218,3 +228,29 @@ def compile_library(config, base_path, library_type, verbose=True):
     except Exception as e:
         print(colored(f"\nError processing {library_type}_library {config['name']}: {e}", 'red'))
         return False
+
+def main(configs, base_path, verbose=True):
+    shared_libs = []
+    static_libs = []
+    binaries = []
+
+    # Separate shared libraries, static libraries, and binaries from configs
+    for config in configs:
+        if config.get('library_type') == 'shared':
+            shared_libs.append(config)
+        elif config.get('library_type') == 'static':
+            static_libs.append(config)
+        else:
+            binaries.append(config)
+
+    # Compile shared libraries first
+    for config in shared_libs:
+        compile_library(config, base_path, 'shared', verbose)
+
+    # Compile static libraries next
+    for config in static_libs:
+        compile_library(config, base_path, 'static', verbose)
+
+    # Compile binaries last
+    for config in binaries:
+        compile_cc_binary(config, base_path, shared_libs, static_libs, verbose)
