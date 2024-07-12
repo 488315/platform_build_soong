@@ -61,11 +61,11 @@ def compile_source_file(src, base_path, intermediates_dir, recovery_available, i
 def get_library_path(lib_name, lib_type):
     """Generates the correct path for static or shared libraries."""
     if lib_type == 'static':
-        lib_path = os.path.join(target_product_out, "obj/STATIC_LIBRARIES", f"{lib_name}_intermediates", f"{lib_name}.a")
+        lib_path = os.path.join(target_product_out, "obj/STATIC_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.a")
     elif lib_type == 'headers':
         lib_path = os.path.join(target_product_out, "obj/HEADER_LIBRARIES", f"{lib_name}_intermediates")
     else:
-        lib_path = os.path.join(target_product_out, "obj/SHARED_LIBRARIES", f"{lib_name}_intermediates", f"{lib_name}.so")
+        lib_path = os.path.join(target_product_out, "obj/SHARED_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.so")
     return lib_path
 
 def link_executable(name, obj_files, shared_libs, static_libs, output_file, verbose=True):
@@ -124,15 +124,17 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
 
         # Define the intermediate and output directories
         intermediates_dir = os.path.join(target_obj, "EXECUTABLES", f"{name}_intermediates")
+        linked_dir = os.path.join(intermediates_dir, "LINKED")
         if recovery_available:
             output_dir = target_recovery_out_usr_bin
         elif is_vendor:
             output_dir = target_vendor_out_bin
         else:
             output_dir = target_system_out_bin
-        output_file = os.path.join(output_dir, name)
+        output_file = os.path.join(linked_dir, name)
 
         os.makedirs(intermediates_dir, exist_ok=True)
+        os.makedirs(linked_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
 
         total_files = len(srcs)
@@ -184,8 +186,10 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
         include_dirs.extend(header_include_dirs)
 
         intermediates_dir = os.path.join(target_obj, f"{library_type.upper()}_LIBRARIES", f"{name}_intermediates")
+        linked_dir = os.path.join(intermediates_dir, "LINKED")
 
         os.makedirs(intermediates_dir, exist_ok=True)
+        os.makedirs(linked_dir, exist_ok=True)
 
         total_files = len(srcs)
         # Compile each source file using multithreading
@@ -206,12 +210,12 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
 
         # Archive object files into a static library or link into a shared library
         if library_type == 'static':
-            archive_cmd = ["ar", "rcs", os.path.join(intermediates_dir, f"{name}.a")] + obj_files
+            archive_cmd = ["ar", "rcs", os.path.join(linked_dir, f"{name}.a")] + obj_files
             if verbose:
                 print(colored(f"\nCreating static library {name}", 'yellow'))
             result = subprocess.run(archive_cmd, capture_output=True)
         else:
-            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-o", os.path.join(intermediates_dir, f"{name}.so")] + obj_files
+            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-o", os.path.join(linked_dir, f"{name}.so")] + obj_files
 
             # Add shared libraries specified in the config
             for lib in shared_libs:
