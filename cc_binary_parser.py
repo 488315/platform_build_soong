@@ -1,19 +1,18 @@
 import os
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from envsetup import target_obj
+from envsetup import target_obj, target_product_out
 from termcolor import colored
 from blueprint_parser import parse_module_info_file
 from cc_library import compile_cc_binary, compile_library
 from defaults_parser import apply_defaults
 
-def generate_meta_lic(config, target_product_out, verbose=True):
-    """Generates meta_lic file in the target_product_out directory."""
+def generate_meta_lic(config, intermediates_dir, verbose=True):
+    """Generates meta_lic file in the specified intermediates directory."""
     try:
-        meta_lic_dir = os.path.join(target_obj, "HEADER_LIBRARIES", f"{config['name']}_intermediates")
-        if not os.path.exists(meta_lic_dir):
-            os.makedirs(meta_lic_dir)
-        meta_lic_file = os.path.join(meta_lic_dir, "meta_lic")
+        meta_lic_file = os.path.join(intermediates_dir, "meta_lic")
+        if not os.path.exists(intermediates_dir):
+            os.makedirs(intermediates_dir)
         with open(meta_lic_file, 'w') as f:
             licenses = config.get('license_kinds', [])
             for license in licenses:
@@ -59,22 +58,14 @@ def main(verbose=True):
     cc_library_shared_configs = [apply_defaults(config, all_defaults_map) for config in cc_library_shared_configs]
     cc_library_headers_configs = [apply_defaults(config, all_defaults_map) for config in cc_library_headers_configs]
 
-    # Get the list of module_info.bp file paths
-    with open(module_info_path, 'r') as file:
-        bp_paths = file.read().splitlines()
-
     header_include_dirs = []
 
     # Process header libraries first and collect include directories
     for config in cc_library_headers_configs:
-        for bp_path in bp_paths:
-            base_path = os.path.dirname(bp_path)
-            intermediates_dir = os.path.join(base_path, "obj/HEADER_LIBRARIES", f"{config['name']}_intermediates")
-            if not os.path.exists(intermediates_dir):
-                os.makedirs(intermediates_dir)
-            include_dirs = [os.path.join(base_path, inc) for inc in config.get('export_include_dirs', [])]
-            header_include_dirs.extend(include_dirs)
-            generate_meta_lic(config, intermediates_dir, verbose)
+        intermediates_dir = os.path.join(target_obj, "HEADER_LIBRARIES", f"{config['name']}_intermediates")
+        include_dirs = [os.path.join(target_obj, inc) for inc in config.get('export_include_dirs', [])]
+        header_include_dirs.extend(include_dirs)
+        generate_meta_lic(config, intermediates_dir, verbose)
 
     def find_base_path_and_compile(configs, library_type):
         for config in configs:
@@ -100,13 +91,15 @@ def main(verbose=True):
                             missing_sources.append(src)
 
             if valid_sources:
-                base_path = config.pop('base_path', None)
-                if base_path:
-                    compile_library(config, base_path, library_type, header_include_dirs, verbose)
+                compile_library(config, base_path, library_type, header_include_dirs, verbose)
             else:
                 print(colored(f"One or more source files for {config['name']} do not exist in any module path:", 'red'))
                 for missing_src in missing_sources:
                     print(colored(f"  - {missing_src}", 'red'))
+
+    # Get the list of module_info.bp file paths
+    with open(module_info_path, 'r') as file:
+        bp_paths = file.read().splitlines()
 
     # Compile static and shared libraries
     find_base_path_and_compile(cc_library_static_configs, 'static')
@@ -136,17 +129,13 @@ def main(verbose=True):
                         missing_sources.append(src)
 
         if valid_sources:
-            base_path = config.pop('base_path', None)
-            if base_path:
-                shared_libs = config.get('shared_libs', [])
-                static_libs = config.get('static_libs', [])
-                cflags = config.get('cflags', [])
-                include_dirs = config.get('export_include_dirs', []) + header_include_dirs
-                if verbose:
-                    print(colored(f"\nFinal configuration: {config}", 'yellow'))
-                compile_cc_binary(config, base_path, shared_libs, static_libs, include_dirs, verbose, cflags)
-            else:
-                print(colored(f"Base path is missing for configuration: {config['name']}", 'red'))
+            shared_libs = config.get('shared_libs', [])
+            static_libs = config.get('static_libs', [])
+            cflags = config.get('cflags', [])
+            include_dirs = config.get('export_include_dirs', []) + header_include_dirs
+            if verbose:
+                print(colored(f"\nFinal configuration: {config}", 'yellow'))
+            compile_cc_binary(config, base_path, shared_libs, static_libs, include_dirs, verbose, cflags)
         else:
             print(colored(f"One or more source files for {config['name']} do not exist in any module path:", 'red'))
             for missing_src in missing_sources:
