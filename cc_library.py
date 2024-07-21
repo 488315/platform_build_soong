@@ -54,7 +54,7 @@ def compile_source_file(src, base_path, intermediates_dir, recovery_available, i
     # Display the compilation message in the desired format
     clear_line = '\033[K'
     status_line = f"[{index}/{total}] //{module_rel_path} {compiler} {os.path.basename(src)}{clear_line}\r"
-    print(colored(status_line, 'blue'), end='')
+    print(colored(status_line, 'white', attrs=['bold']), end='')
 
     result = subprocess.run(compile_cmd, capture_output=True)
     if result.returncode != 0:
@@ -108,21 +108,29 @@ def link_executable(name, obj_files, shared_libs, static_libs, output_file, verb
 
     return True
 
-def install_binary(output_file, dest_dir, name):
+def install_binary(output_file, dest_dir, name, index, total):
     """Installs the binary to the destination directory."""
     os.makedirs(dest_dir, exist_ok=True)
     dest_file = os.path.join(dest_dir, name)
     copyfile(output_file, dest_file)
     # Make the binary executable with chmod +x
     os.chmod(dest_file, 0o755)
-    print(colored(f"Installed binary {output_file} to {dest_file}", 'green'))
 
-def install_library(output_file, dest_dir, name):
+    # Display the installation message in the desired format
+    clear_line = '\033[K'
+    status_line = f"[{index}/{total}] Installing binary {name} to {dest_file}{clear_line}\r"
+    print(colored(status_line, 'white', attrs=['bold']), end='')
+
+def install_library(output_file, dest_dir, name, index, total):
     """Installs the library to the destination directory."""
     os.makedirs(dest_dir, exist_ok=True)
     dest_file = os.path.join(dest_dir, name)
     copyfile(output_file, dest_file)
-    print(colored(f"Installed library {output_file} to {dest_file}", 'green'))
+
+    # Display the installation message in the desired format
+    clear_line = '\033[K'
+    status_line = f"[{index}/{total}] Installing library {name} to {dest_file}{clear_line}\r"
+    print(colored(status_line, 'white', attrs=['bold']), end='')
 
 def compile_cc_binary(config, base_path, shared_libs, static_libs, header_include_dirs, verbose=True, cflags=None, cppflags=None, include_dirs=None, host=False, arch=target_arch):
     """Compiles a cc_binary block into an executable using Clang."""
@@ -190,7 +198,7 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
         print(colored(f"\nSuccessfully created executable {output_file}", 'green'))
 
         # Install the binary
-        install_binary(output_file, output_dir, name)
+        install_binary(output_file, output_dir, name, 1, 1)
 
     except Exception as e:
         print(colored(f"\nError processing cc_binary {config['name']}: {e}", 'red'))
@@ -280,10 +288,10 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
         # Install the library
         if library_type == 'static':
             dest_dir = target_system_out_lib if arch == "32" else target_system_out_lib64
-            install_library(output_file, dest_dir, f"{name}.a")
+            install_library(output_file, dest_dir, f"{name}.a", 1, 1)
         else:
             dest_dir = target_system_out_lib if arch == "32" else target_system_out_lib64
-            install_library(output_file, dest_dir, f"{name}.so")
+            install_library(output_file, dest_dir, f"{name}.so", 1, 1)
 
         # Additionally copy the shared library to the specified path
         if library_type == 'shared':
@@ -291,7 +299,9 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
             os.makedirs(custom_dest_dir, exist_ok=True)
             custom_dest_file = os.path.join(custom_dest_dir, f"{name}.so")
             copyfile(output_file, custom_dest_file)
-            print(colored(f"Copied shared library {output_file} to {custom_dest_file}", 'green'))
+            clear_line = '\033[K'
+            status_line = f"Copied shared library {name} to {custom_dest_file}{clear_line}\r"
+            print(colored(status_line, 'white', attrs=['bold']), end='')
 
         return True
 
