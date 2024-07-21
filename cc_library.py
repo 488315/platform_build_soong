@@ -77,7 +77,7 @@ def get_library_path(lib_name, lib_type):
 
 def link_executable(name, obj_files, shared_libs, static_libs, output_file, verbose=True):
     """Links object files into an executable using Clang with mold linker."""
-    link_cmd = [clangxx, "-fuse-ld=mold", "-o", output_file] + obj_files
+    link_cmd = [clangxx, "-fuse-ld=mold", "-o", output_file, "-Wl,-rpath,./usr/lib64/"] + obj_files
 
     # Add static libraries
     for lib in static_libs:
@@ -140,6 +140,7 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
         recovery_available = config.get('recovery_available', False)
         is_vendor = config.get('vendor', False)
         include_dirs = config.get('export_include_dirs', []) if include_dirs is None else include_dirs
+        rpath = config.get('rpath', './usr/lib64/')
         rtti = config.get('rtti', False)
 
         # Add include directories from header libraries
@@ -210,6 +211,7 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
         include_dirs = config.get('export_include_dirs', [])
         shared_libs = config.get('shared_libs', [])
         static_libs = config.get('static_libs', [])
+        rpath = config.get('rpath', './usr/lib64/')
         rtti = config.get('rtti', False)
 
         # Add include directories from header libraries
@@ -247,7 +249,7 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
                 print(colored(f"\nCreating static library {name}", 'yellow'))
             result = subprocess.run(archive_cmd, capture_output=True)
         else:
-            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-o", output_file] + obj_files
+            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-Wl,-rpath," + rpath, "-o", output_file] + obj_files
 
             # Add shared libraries specified in the config
             for lib in shared_libs:

@@ -121,6 +121,7 @@ def compile_cc_binaries(packages, module_info_path, bp_paths, verbose=True):
             shared_libs = config.get('shared_libs', [])
             static_libs = config.get('static_libs', [])
             cflags = config.get('cflags', [])
+            rpath = config.get('rpath', './usr/lib64/')
             include_dirs = config.get('export_include_dirs', []) + header_include_dirs
             if verbose:
                 print(colored(f"\nFinal configuration: {config}", 'yellow'))
