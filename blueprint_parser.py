@@ -1,3 +1,7 @@
+# File: blueprint_parser.py
+# description: Parses blueprint files and MODULE_INFO file to extract configurations
+# copyright: (c) 2024 by 488315
+#!/usr/bin/python
 import os
 import re
 import json

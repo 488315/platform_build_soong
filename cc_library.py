@@ -1,15 +1,21 @@
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from shutil import copyfile
 from termcolor import colored
 from defaults_parser import apply_defaults
-from envsetup import target_obj, clang, clangxx, target_vendor_out_bin, target_system_out_bin, target_recovery_out_usr_bin, target_product_out, build_top
+from envsetup import clang, clangxx, target_vendor_out_bin, target_system_out_bin, target_recovery_out_usr_bin, target_product_out, build_top, target_vendor_out_lib, target_system_out_lib, target_system_out_lib64, target_vendor_out_lib64
+from device_info import target_arch, target_2nd_arch
 
-def compile_source_file(src, base_path, intermediates_dir, recovery_available, index, total, cflags, cppflags, include_dirs, library_type=None, rtti=False, verbose=True):
+def compile_source_file(src, base_path, intermediates_dir, recovery_available, index, total, cflags, cppflags, include_dirs, library_type=None, rtti=False, verbose=True, arch=target_arch):
     """Compiles a single source file into an object file using Clang or Clang++."""
     src_path = os.path.join(base_path, src)
-    obj_file = os.path.join(intermediates_dir, f"{os.path.splitext(src)[0]}.o")
-    dep_file = os.path.join(intermediates_dir, f"{os.path.splitext(src)[0]}.d")
+    module_rel_path = os.path.relpath(base_path, build_top)
+    obj_dir = os.path.join(intermediates_dir, "obj", module_rel_path)
+    obj_file = os.path.join(obj_dir, f"{os.path.splitext(os.path.basename(src))[0]}.o")
+    dep_file = os.path.join(obj_dir, f"{os.path.splitext(os.path.basename(src))[0]}.d")
+
+    os.makedirs(os.path.dirname(obj_file), exist_ok=True)
 
     # Determine the compiler based on the file extension
     compiler = clangxx if src.endswith(('.cpp', '.cc', '.cxx')) else clang
@@ -47,7 +53,7 @@ def compile_source_file(src, base_path, intermediates_dir, recovery_available, i
 
     # Display the compilation message in the desired format
     clear_line = '\033[K'
-    status_line = f"[{index}/{total}] //{os.path.relpath(base_path, start='/run/media/kjones/build/android/minimal_linux')} {compiler} {os.path.basename(src)}{clear_line}\r"
+    status_line = f"[{index}/{total}] //{module_rel_path} {compiler} {os.path.basename(src)}{clear_line}\r"
     print(colored(status_line, 'blue'), end='')
 
     result = subprocess.run(compile_cmd, capture_output=True)
@@ -60,12 +66,13 @@ def compile_source_file(src, base_path, intermediates_dir, recovery_available, i
 
 def get_library_path(lib_name, lib_type):
     """Generates the correct path for static or shared libraries."""
+    lib_dir = "lib"
     if lib_type == 'static':
-        lib_path = os.path.join(target_product_out, "obj/STATIC_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.a")
+        lib_path = os.path.join(target_product_out, f"obj/{lib_dir}/STATIC_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.a")
     elif lib_type == 'headers':
-        lib_path = os.path.join(target_product_out, "obj/HEADER_LIBRARIES", f"{lib_name}_intermediates")
+        lib_path = os.path.join(target_product_out, f"obj/{lib_dir}/HEADER_LIBRARIES", f"{lib_name}_intermediates")
     else:
-        lib_path = os.path.join(target_product_out, "obj/SHARED_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.so")
+        lib_path = os.path.join(target_product_out, f"obj/{lib_dir}/SHARED_LIBRARIES", f"{lib_name}_intermediates", "LINKED", f"{lib_name}.so")
     return lib_path
 
 def link_executable(name, obj_files, shared_libs, static_libs, output_file, verbose=True):
@@ -101,7 +108,23 @@ def link_executable(name, obj_files, shared_libs, static_libs, output_file, verb
 
     return True
 
-def compile_cc_binary(config, base_path, shared_libs, static_libs, header_include_dirs, verbose=True, cflags=None, cppflags=None, include_dirs=None):
+def install_binary(output_file, dest_dir, name):
+    """Installs the binary to the destination directory."""
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_file = os.path.join(dest_dir, name)
+    copyfile(output_file, dest_file)
+    # Make the binary executable with chmod +x
+    os.chmod(dest_file, 0o755)
+    print(colored(f"Installed binary {output_file} to {dest_file}", 'green'))
+
+def install_library(output_file, dest_dir, name):
+    """Installs the library to the destination directory."""
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_file = os.path.join(dest_dir, name)
+    copyfile(output_file, dest_file)
+    print(colored(f"Installed library {output_file} to {dest_file}", 'green'))
+
+def compile_cc_binary(config, base_path, shared_libs, static_libs, header_include_dirs, verbose=True, cflags=None, cppflags=None, include_dirs=None, host=False, arch=target_arch):
     """Compiles a cc_binary block into an executable using Clang."""
     try:
         name = config['name']
@@ -123,7 +146,8 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
         include_dirs.extend(header_include_dirs)
 
         # Define the intermediate and output directories
-        intermediates_dir = os.path.join(target_obj, "EXECUTABLES", f"{name}_intermediates")
+        module_rel_path = os.path.relpath(base_path, build_top)
+        intermediates_dir = os.path.join("out/soong/.intermediates", module_rel_path, "EXECUTABLES", f"{name}_intermediates")
         linked_dir = os.path.join(intermediates_dir, "LINKED")
         if recovery_available:
             output_dir = target_recovery_out_usr_bin
@@ -133,6 +157,9 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
             output_dir = target_system_out_bin
         output_file = os.path.join(linked_dir, name)
 
+        if host:
+            output_dir = os.path.join("out/host/linux-x86/bin")
+
         os.makedirs(intermediates_dir, exist_ok=True)
         os.makedirs(linked_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
@@ -141,7 +168,7 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
         # Compile each source file using multithreading
         with ThreadPoolExecutor() as executor:
             futures = [
-                executor.submit(compile_source_file, src, base_path, intermediates_dir, recovery_available, index + 1, total_files, cflags, cppflags, include_dirs, verbose, rtti)
+                executor.submit(compile_source_file, src, base_path, intermediates_dir, recovery_available, index + 1, total_files, cflags, cppflags, include_dirs, library_type=None, rtti=rtti, verbose=verbose, arch=arch)
                 for index, src in enumerate(srcs)
             ]
             results = [future.result() for future in as_completed(futures)]
@@ -161,10 +188,13 @@ def compile_cc_binary(config, base_path, shared_libs, static_libs, header_includ
 
         print(colored(f"\nSuccessfully created executable {output_file}", 'green'))
 
+        # Install the binary
+        install_binary(output_file, output_dir, name)
+
     except Exception as e:
         print(colored(f"\nError processing cc_binary {config['name']}: {e}", 'red'))
 
-def compile_library(config, base_path, library_type, header_include_dirs, verbose=True):
+def compile_library(config, base_path, library_type, header_include_dirs, verbose=True, host=False, arch=target_arch):
     """Compiles a cc_library_static or cc_library_shared block using Clang."""
     try:
         name = config['name']
@@ -185,8 +215,10 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
         # Add include directories from header libraries
         include_dirs.extend(header_include_dirs)
 
-        intermediates_dir = os.path.join(target_obj, f"{library_type.upper()}_LIBRARIES", f"{name}_intermediates")
+        module_rel_path = os.path.relpath(base_path, build_top)
+        intermediates_dir = os.path.join("out/soong/.intermediates", module_rel_path, f"{library_type.upper()}_LIBRARIES", f"{name}_intermediates")
         linked_dir = os.path.join(intermediates_dir, "LINKED")
+        output_file = os.path.join(linked_dir, f"{name}.so") if library_type == 'shared' else os.path.join(linked_dir, f"{name}.a")
 
         os.makedirs(intermediates_dir, exist_ok=True)
         os.makedirs(linked_dir, exist_ok=True)
@@ -195,7 +227,7 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
         # Compile each source file using multithreading
         with ThreadPoolExecutor() as executor:
             futures = [
-                executor.submit(compile_source_file, src, base_path, intermediates_dir, False, index + 1, total_files, cflags, cppflags, include_dirs, library_type, rtti, verbose)
+                executor.submit(compile_source_file, src, base_path, intermediates_dir, False, index + 1, total_files, cflags, cppflags, include_dirs, library_type, rtti, verbose, arch)
                 for index, src in enumerate(srcs)
             ]
             results = [future.result() for future in as_completed(futures)]
@@ -210,12 +242,12 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
 
         # Archive object files into a static library or link into a shared library
         if library_type == 'static':
-            archive_cmd = ["ar", "rcs", os.path.join(linked_dir, f"{name}.a")] + obj_files
+            archive_cmd = ["ar", "rcs", output_file] + obj_files
             if verbose:
                 print(colored(f"\nCreating static library {name}", 'yellow'))
             result = subprocess.run(archive_cmd, capture_output=True)
         else:
-            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-o", os.path.join(linked_dir, f"{name}.so")] + obj_files
+            link_cmd = [clangxx, "-shared", "-Wl,--no-undefined", "-o", output_file] + obj_files
 
             # Add shared libraries specified in the config
             for lib in shared_libs:
@@ -242,19 +274,37 @@ def compile_library(config, base_path, library_type, header_include_dirs, verbos
             return False
 
         print(colored(f"\nSuccessfully created library {name}", 'green'))
+
+        # Install the library
+        if library_type == 'static':
+            dest_dir = target_system_out_lib if arch == "32" else target_system_out_lib64
+            install_library(output_file, dest_dir, f"{name}.a")
+        else:
+            dest_dir = target_system_out_lib if arch == "32" else target_system_out_lib64
+            install_library(output_file, dest_dir, f"{name}.so")
+
+        # Additionally copy the shared library to the specified path
+        if library_type == 'shared':
+            custom_dest_dir = os.path.join(target_product_out, "obj/lib/SHARED_LIBRARIES", f"{name}_intermediates/LINKED")
+            os.makedirs(custom_dest_dir, exist_ok=True)
+            custom_dest_file = os.path.join(custom_dest_dir, f"{name}.so")
+            copyfile(output_file, custom_dest_file)
+            print(colored(f"Copied shared library {output_file} to {custom_dest_file}", 'green'))
+
         return True
 
     except Exception as e:
         print(colored(f"\nError processing {library_type}_library {config['name']}: {e}", 'red'))
         return False
 
-def process_header_library(config, base_path, verbose=True):
+def process_header_library(config, base_path, verbose=True, arch=target_arch):
     """Processes a cc_library_headers block."""
     try:
         name = config['name']
         export_include_dirs = config.get('export_include_dirs', [])
 
-        intermediates_dir = os.path.join(target_obj, "HEADER_LIBRARIES", f"{name}_intermediates")
+        module_rel_path = os.path.relpath(base_path, build_top)
+        intermediates_dir = os.path.join("out/soong/.intermediates", module_rel_path, "HEADER_LIBRARIES", f"{name}_intermediates")
         os.makedirs(intermediates_dir, exist_ok=True)
 
         include_dirs = [os.path.join(base_path, inc) for inc in export_include_dirs]
@@ -265,7 +315,7 @@ def process_header_library(config, base_path, verbose=True):
         print(colored(f"\nError processing header library {config['name']}: {e}", 'red'))
         return []
 
-def main(configs, base_path, verbose=True):
+def main(configs, base_path, verbose=True, arch=target_arch):
     shared_libs = []
     static_libs = []
     header_libs = []
@@ -285,17 +335,17 @@ def main(configs, base_path, verbose=True):
 
     # Process header libraries first and collect include directories
     for config in header_libs:
-        include_dirs = process_header_library(config, base_path, verbose)
+        include_dirs = process_header_library(config, base_path, verbose, arch)
         header_include_dirs.extend(include_dirs)
 
     # Compile shared libraries next
     for config in shared_libs:
-        compile_library(config, base_path, 'shared', header_include_dirs, verbose)
+        compile_library(config, base_path, 'shared', header_include_dirs, verbose, arch=arch)
 
     # Compile static libraries next
     for config in static_libs:
-        compile_library(config, base_path, 'static', header_include_dirs, verbose)
+        compile_library(config, base_path, 'static', header_include_dirs, verbose, arch=arch)
 
     # Compile binaries last
     for config in binaries:
-        compile_cc_binary(config, base_path, shared_libs, static_libs, header_include_dirs, verbose)
+        compile_cc_binary(config, base_path, shared_libs, static_libs, header_include_dirs, verbose, arch=arch)
