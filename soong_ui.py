@@ -1,8 +1,10 @@
 import os
-import shutil
 from build_logger import pr_info
 from envsetup import build_top
+from ninja_printer import *
 from sandbox_build import *
+
+from build.make.core.tasks.sandbox_build import print_status
 
 # Define directories based on the build top directory
 build_soong_tools = os.path.join(build_top, "out", "soong", "tools")
@@ -11,6 +13,7 @@ soong_dir = os.path.join(build_top, "out", "soong")
 build_tasks_dir = os.path.join(soong_dir, ".build_tasks")
 intermediates_dir = os.path.join(soong_dir, ".intermediates")
 soong_tmp_dir = os.path.join(soong_dir, ".temp")
+
 
 def prepare_directories():
     """
@@ -22,6 +25,7 @@ def prepare_directories():
     for directory in [module_paths_dir, soong_dir, build_tasks_dir, intermediates_dir, soong_tmp_dir]:
         os.makedirs(directory, exist_ok=True)
         pr_info(f"Created directory: {directory}", log_tag="DIRECTORY_SETUP")
+
 
 def find_include_dirs(build_top):
     """
@@ -37,18 +41,25 @@ def find_include_dirs(build_top):
     4. Log each found directory with an informational message.
     """
     include_dirs = set()
+    index = 0
+    total = sum([len(files) for r, d, files in os.walk(build_top) if any(file.endswith(".h") for file in files)])
+
     for root, dirs, files in os.walk(build_top):
         for file in files:
             if file.endswith(".h"):
                 include_dirs.add(root)
-    
+                index += 1
+                print_status(index, total, root, "Header Directory")
+
     export_includes_path = os.path.join(module_paths_dir, 'EXPORT_INCLUDES')
     os.makedirs(os.path.dirname(export_includes_path), exist_ok=True)
-    
+
     with open(export_includes_path, 'w') as f:
         for dir in include_dirs:
-            pr_info(f"Found include directory: {dir}", log_tag="INCLUDE_DIRS")
+            print_status(index, total, dir, "including")
             f.write(dir + '\n')
+    print_newline()
+
 
 def find_module_info():
     """
@@ -63,13 +74,20 @@ def find_module_info():
     pr_info("Finding module information", log_tag="MODULE_INFO")
     module_info_path = os.path.join(module_paths_dir, 'MODULE_INFO')
     os.makedirs(os.path.dirname(module_info_path), exist_ok=True)
-    
+
+    index = 0
+    total = sum([len(files) for r, d, files in os.walk(build_top) if 'module_info.bp' in files])
+
     with open(module_info_path, 'w') as f:
         for root, dirs, files in os.walk(build_top):
             if 'module_info.bp' in files:
                 module_file_path = os.path.join(root, 'module_info.bp')
                 f.write(module_file_path + '\n')
                 pr_info(f"Found module: {module_file_path}", log_tag="MODULE_INFO")
+                index += 1
+                print_status(index, total, root, "including")
+    print_newline()
+
 
 def soong_main():
     """
@@ -88,6 +106,7 @@ def soong_main():
     find_module_info()
 
     pr_info("Sandboxed build environment setup complete", log_tag="SANDBOX_SETUP")
+
 
 if __name__ == "__main__":
     soong_main()
