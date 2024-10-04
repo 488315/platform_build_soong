@@ -1,16 +1,39 @@
 #!/bin/bash
 
-# Set the directory containing the Soong UI tests and XML files
+# Check if BUILD_TOP is set
+if [ -z "$BUILD_TOP" ]; then
+    echo "Error: BUILD_TOP is not set."
+    exit 1
+fi
+
+# Set the directories containing the Soong UI tests and XML files
 SOONG_UI_DIR="$BUILD_TOP/build/soong"
+BLUEPRINT_DIR="$BUILD_TOP/build/blueprint"
 
-# Add the Soong directory to the PYTHONPATH
-export PYTHONPATH="$PYTHONPATH:$SOONG_UI_DIR"
+# Initialize a variable to collect all directories
+PYTHONPATH_DIRS="$SOONG_UI_DIR"
 
-# Loop through each subdirectory in the SOONG_UI_DIR and add it to PYTHONPATH
-for dir in "$SOONG_UI_DIR"/*; do
+# Function to recursively add directories to PYTHONPATH_DIRS
+add_to_pythonpath() {
+  for dir in "$1"/*; do
     if [ -d "$dir" ]; then
-        export PYTHONPATH="$PYTHONPATH:$dir"
+      PYTHONPATH_DIRS="$PYTHONPATH_DIRS:$dir"
+      add_to_pythonpath "$dir"  # Recursive call for subdirectories
     fi
-done
+  done
+}
+
+# Add Soong UI directories recursively
+add_to_pythonpath "$SOONG_UI_DIR"
+
+# Add Blueprint directories recursively
+add_to_pythonpath "$BLUEPRINT_DIR"
+
+# Set PYTHONPATH, adding to existing PYTHONPATH if set
+if [ -n "$PYTHONPATH" ]; then
+    export PYTHONPATH="$PYTHONPATH:$PYTHONPATH_DIRS"
+else
+    export PYTHONPATH="$PYTHONPATH_DIRS"
+fi
 
 # End of script
