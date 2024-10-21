@@ -1,9 +1,5 @@
-# arch.py
-
 from device_info import target_cpu_abi, target_arch, target_arch_variant, \
-    target_2nd_cpu_abi, target_2nd_arch, target_2nd_arch_variant, \
-    target_board_platform, target_product, target_kernel_arch, \
-    target_kernel, target_defconfig
+    target_2nd_cpu_abi, target_2nd_arch, target_2nd_arch_variant
 from arch_list import Arm, Arm64, X86, X86_64, archVariants, cpuVariants, archFeatures, androidArchFeatureMap
 
 # Constants for common variant
@@ -37,7 +33,7 @@ class Arch:
         self.arch_features = arch_features
 
     def __str__(self):
-        s = str(self.arch_type)
+        s = str(self.arch_type.name)  # Ensure we are printing the name of ArchType, not the object reference
         if self.arch_variant:
             s += "_" + self.arch_variant
         if self.cpu_variant:
